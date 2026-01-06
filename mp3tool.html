@@ -5,41 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>音声変換＆3時間分割ツール + AIアシスタント</title>
     
-    <!-- COI-ServiceWorker (Inline Version): Enables SharedArrayBuffer via Blob URL to avoid origin mismatch errors -->
+    <!-- COI Script: GitHub Pages対応版 -->
     <script>
         if (typeof window !== 'undefined' && window.isSecureContext) {
             if (!window.crossOriginIsolated) {
-                const workerCode = `
-                    self.addEventListener("install", () => self.skipWaiting());
-                    self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
-                    self.addEventListener("fetch", (event) => {
-                        if (event.request.cache === "only-if-cached" && event.request.mode !== "same-origin") return;
-                        event.respondWith(
-                            fetch(event.request)
-                                .then((response) => {
-                                    if (response.status === 0) return response;
-                                    const newHeaders = new Headers(response.headers);
-                                    newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
-                                    newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
-                                    return new Response(response.body, {
-                                        status: response.status,
-                                        statusText: response.statusText,
-                                        headers: newHeaders,
-                                    });
-                                })
-                                .catch((e) => console.error(e))
-                        );
-                    });
-                `;
-                const blob = new Blob([workerCode], { type: 'application/javascript' });
-                const url = URL.createObjectURL(blob);
-                navigator.serviceWorker.register(url)
+                console.log("SharedArrayBuffer is disabled. Attempting to enable via Service Worker...");
+                
+                // 1. まず推奨される sw.js (別ファイル) を探しに行く
+                navigator.serviceWorker.register("./sw.js")
                     .then((reg) => {
-                        console.log("COOP/COEP Service Worker registered");
-                        // Reload to activate the new headers
-                        window.location.reload();
+                        console.log("sw.js registered. Reloading...");
+                        // 登録成功したらリロードしてヘッダーを適用させる
+                        // 無限ループ防止のため、失敗が続くようなら停止するロジックを入れるのが理想だが
+                        // ここではシンプルにリロードする
+                        setTimeout(() => window.location.reload(), 500);
                     })
-                    .catch((err) => console.error("COOP/COEP Service Worker failed:", err));
+                    .catch((err) => {
+                        console.log("sw.js not found or failed. Trying inline fallback...", err);
+                        
+                        // 2. sw.jsがない場合、インラインのフォールバックを試みる (ローカル環境用)
+                         const workerCode = `
+                            self.addEventListener("install", () => self.skipWaiting());
+                            self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+                            self.addEventListener("fetch", (event) => {
+                                if (event.request.cache === "only-if-cached" && event.request.mode !== "same-origin") return;
+                                event.respondWith(
+                                    fetch(event.request)
+                                        .then((response) => {
+                                            if (response.status === 0) return response;
+                                            const newHeaders = new Headers(response.headers);
+                                            newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
+                                            newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+                                            return new Response(response.body, {
+                                                status: response.status,
+                                                statusText: response.statusText,
+                                                headers: newHeaders,
+                                            });
+                                        })
+                                        .catch((e) => console.error(e))
+                                );
+                            });
+                        `;
+                        const blob = new Blob([workerCode], { type: 'application/javascript' });
+                        const url = URL.createObjectURL(blob);
+                        navigator.serviceWorker.register(url)
+                            .then((reg) => {
+                                console.log("Inline SW registered. Reloading...");
+                                setTimeout(() => window.location.reload(), 500);
+                            })
+                            .catch((e) => console.error("Inline SW failed:", e));
+                    });
             }
         }
     </script>
@@ -93,18 +108,10 @@
                     </svg>
                 </div>
                 <div class="ml-3">
-                    <p class="text-sm text-red-700 font-bold mb-1">
-                        動作環境のエラー (SharedArrayBuffer)
-                    </p>
-                    <p class="text-sm text-red-700">
-                        このアプリは、ファイルをダブルクリックして直接開く（file://）と動作しません。<br>
-                        ブラウザのセキュリティ制限により、以下のいずれかの方法で開く必要があります：
-                    </p>
-                    <ul class="list-disc list-inside text-sm text-red-700 mt-2 ml-1">
-                        <li>VS Codeの「Live Server」機能を使って開く</li>
-                        <li>Python等で簡易ローカルサーバーを立てて開く (<code>http://localhost...</code>)</li>
-                        <li>GitHub Pages等のWebサーバーに配置してアクセスする</li>
-                    </ul>
+                    <h3 class="text-sm font-bold text-red-800 mb-1" id="alert-title">動作環境のエラー</h3>
+                    <div class="text-sm text-red-700" id="alert-message">
+                        <!-- Dynamic Message -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -236,8 +243,7 @@
                     // But if it's still undefined, show alert
                     setTimeout(() => {
                         if (typeof SharedArrayBuffer === 'undefined') {
-                            alertBox.classList.remove('hidden');
-                            log("Error: SharedArrayBuffer is not available. Please use a local server (e.g., Live Server) or HTTPS with COOP/COEP headers.");
+                            showError();
                         }
                     }, 1000);
                     
@@ -266,6 +272,35 @@
                 log("Error loading FFmpeg: " + e.message);
                 alertBox.classList.remove('hidden');
             }
+        }
+
+        function showError() {
+            const alertBox = document.getElementById('cross-origin-alert');
+            const alertTitle = document.getElementById('alert-title');
+            const alertMessage = document.getElementById('alert-message');
+            
+            alertBox.classList.remove('hidden');
+
+            if (location.protocol === 'file:') {
+                alertTitle.textContent = "ファイルを直接開いていませんか？";
+                alertMessage.innerHTML = `
+                    <p class="mb-2">このアプリは高度な変換機能を使用するため、ファイルをダブルクリックして直接開く（file://形式）ことはできません。</p>
+                    <p class="font-bold mb-1">解決策：</p>
+                    <ul class="list-disc list-inside">
+                        <li><strong>VS Codeをお使いの場合:</strong> 拡張機能「Live Server」で開いてください。</li>
+                        <li><strong>Pythonがある場合:</strong> フォルダ内で <code>python -m http.server</code> を実行し、<code>http://localhost:8000</code> にアクセスしてください。</li>
+                    </ul>
+                `;
+            } else {
+                alertTitle.textContent = "GitHub Pagesでのエラー";
+                alertMessage.innerHTML = `
+                    <p class="mb-2">ブラウザのセキュリティ制限により、<code>sw.js</code> が読み込まれていません。</p>
+                    <p class="font-bold mb-1">解決策：</p>
+                    <p>このHTMLファイルと同じフォルダに <strong>sw.js</strong> というファイルをアップロードしてください。</p>
+                    <p class="text-xs text-gray-500 mt-2">※アップロードしても消えない場合は、ブラウザのキャッシュをクリアして再読み込みしてください。</p>
+                `;
+            }
+            log("Error: SharedArrayBuffer is not available. Please ensure sw.js is uploaded.");
         }
 
         function log(message) {
