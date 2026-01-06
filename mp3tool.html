@@ -5,8 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>音声変換＆3時間分割ツール + AIアシスタント</title>
     
-    <!-- COI-ServiceWorker: Enables SharedArrayBuffer on local servers automatically -->
-    <script src="https://unpkg.com/coi-serviceworker@0.1.0/coi-serviceworker.js"></script>
+    <!-- COI-ServiceWorker (Inline Version): Enables SharedArrayBuffer via Blob URL to avoid origin mismatch errors -->
+    <script>
+        if (typeof window !== 'undefined' && window.isSecureContext) {
+            if (!window.crossOriginIsolated) {
+                const workerCode = `
+                    self.addEventListener("install", () => self.skipWaiting());
+                    self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+                    self.addEventListener("fetch", (event) => {
+                        if (event.request.cache === "only-if-cached" && event.request.mode !== "same-origin") return;
+                        event.respondWith(
+                            fetch(event.request)
+                                .then((response) => {
+                                    if (response.status === 0) return response;
+                                    const newHeaders = new Headers(response.headers);
+                                    newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
+                                    newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+                                    return new Response(response.body, {
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        headers: newHeaders,
+                                    });
+                                })
+                                .catch((e) => console.error(e))
+                        );
+                    });
+                `;
+                const blob = new Blob([workerCode], { type: 'application/javascript' });
+                const url = URL.createObjectURL(blob);
+                navigator.serviceWorker.register(url)
+                    .then((reg) => {
+                        console.log("COOP/COEP Service Worker registered");
+                        // Reload to activate the new headers
+                        window.location.reload();
+                    })
+                    .catch((err) => console.error("COOP/COEP Service Worker failed:", err));
+            }
+        }
+    </script>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- ffmpeg.wasm (Version 0.10.1 for better compat with script tags) -->
@@ -196,9 +232,16 @@
             try {
                 // SharedArrayBuffer check
                 if (typeof SharedArrayBuffer === 'undefined') {
-                    alertBox.classList.remove('hidden');
-                    log("Error: SharedArrayBuffer is not available. Please use a local server (e.g., Live Server) or HTTPS with COOP/COEP headers.");
-                    return; // Stop initialization to prevent crash
+                    // Try to wait a bit in case the Service Worker is reloading the page
+                    // But if it's still undefined, show alert
+                    setTimeout(() => {
+                        if (typeof SharedArrayBuffer === 'undefined') {
+                            alertBox.classList.remove('hidden');
+                            log("Error: SharedArrayBuffer is not available. Please use a local server (e.g., Live Server) or HTTPS with COOP/COEP headers.");
+                        }
+                    }, 1000);
+                    
+                    if (typeof SharedArrayBuffer === 'undefined') return; 
                 }
 
                 ffmpeg = createFFmpeg({
