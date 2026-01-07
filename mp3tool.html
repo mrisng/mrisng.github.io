@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<meta name="robots" content="noindex,nofollow,noarchive" />
 <html lang="ja">
 <head>
+    <meta name="robots" content="noindex,nofollow,noarchive" />
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>音声変換＆3時間分割ツール + AIアシスタント</title>
+    <title>音声変換＆3時間分割ツール</title>
     
     <!-- COI Script: GitHub Pages対応版 -->
     <script>
@@ -17,8 +17,6 @@
                     .then((reg) => {
                         console.log("sw.js registered. Reloading...");
                         // 登録成功したらリロードしてヘッダーを適用させる
-                        // 無限ループ防止のため、失敗が続くようなら停止するロジックを入れるのが理想だが
-                        // ここではシンプルにリロードする
                         setTimeout(() => window.location.reload(), 500);
                     })
                     .catch((err) => {
@@ -63,8 +61,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- ffmpeg.wasm (Version 0.10.1 for better compat with script tags) -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.10.1/dist/ffmpeg.min.js"></script>
-    <!-- Markdown parser for AI response -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
         body { font-family: 'Noto Sans JP', sans-serif; }
@@ -83,12 +79,6 @@
         .log-area::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
-        
-        /* AI Result Styling */
-        .prose h3 { font-size: 1.1em; font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; color: #1e40af; }
-        .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; }
-        .prose li { margin-bottom: 0.25em; }
-        .prose strong { color: #1f2937; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col items-center py-10 px-4">
@@ -147,7 +137,6 @@
             </button>
         </div>
 
-    
         <!-- Progress -->
         <div id="progress-container" class="hidden mb-6">
             <div class="flex justify-between mb-1">
@@ -178,7 +167,6 @@
 
     <script>
         const { createFFmpeg, fetchFile } = FFmpeg;
-        const apiKey = ""; // System provides this at runtime
         
         // Configuration
         const SEGMENT_TIME = 10800; // 3 hours in seconds
@@ -196,12 +184,6 @@
         const downloadList = document.getElementById('download-list');
         const toggleLogBtn = document.getElementById('toggle-log');
         const alertBox = document.getElementById('cross-origin-alert');
-
-        // AI Elements
-        const aiPromptInput = document.getElementById('ai-prompt');
-        const aiGenerateBtn = document.getElementById('ai-generate-btn');
-        const aiLoading = document.getElementById('ai-loading');
-        const aiResult = document.getElementById('ai-result');
 
         let ffmpeg = null;
         let selectedFile = null;
@@ -297,68 +279,7 @@
                 resultsArea.classList.add('hidden');
                 alertBox.classList.add('hidden');
                 
-                // Auto-fill AI prompt if empty
-                if (!aiPromptInput.value) {
-                    aiPromptInput.value = file.name.split('.')[0];
-                }
-
                 if (!ffmpeg) initFFmpeg();
-            }
-        });
-
-        // AI Generation Logic
-        aiGenerateBtn.addEventListener('click', async () => {
-            const userPrompt = aiPromptInput.value.trim();
-            if (!userPrompt) {
-                alert("録音内容の説明を入力してください。");
-                return;
-            }
-
-            aiLoading.classList.remove('hidden');
-            aiResult.classList.add('hidden');
-            aiGenerateBtn.disabled = true;
-
-            try {
-                const systemPrompt = `
-                    You are a helpful audio content assistant. 
-                    The user has a long audio recording that is being split into 3-hour segments using an automated tool.
-                    Based on the user's description of the content, suggest metadata for the split files.
-                    
-                    Assume the audio might be 6-12 hours long (2-4 parts).
-                    
-                    Output in Markdown format with:
-                    1. A creative series title.
-                    2. For each part (Part 1, Part 2, Part 3...), suggest:
-                       - A descriptive Title (e.g. "Opening & Keynote")
-                       - A clean File Name (alphanumeric, e.g. "conf_2024_part1.mp3")
-                       - A short 1-line description of what typically happens in this time block based on the context (e.g. "Morning session covering X and Y").
-                    
-                    Keep the tone helpful and organized. Respond in Japanese.
-                `;
-
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Content Description: ${userPrompt}` }] }],
-                        systemInstruction: { parts: [{ text: systemPrompt }] }
-                    })
-                });
-
-                if (!response.ok) throw new Error('API request failed');
-
-                const data = await response.json();
-                const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "生成できませんでした。";
-
-                aiResult.innerHTML = marked.parse(text);
-                aiResult.classList.remove('hidden');
-
-            } catch (error) {
-                console.error(error);
-                alert("AI生成中にエラーが発生しました。");
-            } finally {
-                aiLoading.classList.add('hidden');
-                aiGenerateBtn.disabled = false;
             }
         });
 
